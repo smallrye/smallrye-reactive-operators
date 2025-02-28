@@ -6,6 +6,7 @@ import java.util.Queue;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongConsumer;
 
 import io.smallrye.mutiny.Context;
 import io.smallrye.mutiny.helpers.queues.Queues;
@@ -168,6 +169,18 @@ public class SerializedMultiEmitter<T> implements MultiEmitter<T>, MultiSubscrib
     @Override
     public long requested() {
         return downstream.requested();
+    }
+
+    @Override
+    public MultiEmitter<T> onRequest(LongConsumer consumer) {
+        downstream.onRequest(consumer);
+        return this;
+    }
+
+    @Override
+    public MultiEmitter<T> onCancellation(Runnable onCancellation) {
+        downstream.onCancellation(onCancellation);
+        return this;
     }
 
     @Override

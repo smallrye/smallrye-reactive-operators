@@ -12,6 +12,7 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.Flow.Subscription;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 
@@ -637,5 +638,35 @@ public class MultiCreateFromEmitterTest {
 
         sub = multi.subscribe().withSubscriber(AssertSubscriber.create());
         sub.request(-1L).assertFailedWith(IllegalArgumentException.class, "must be greater than 0");
+    }
+
+    @Test
+    public void onRquestAndCancellationCallbacks() {
+        AtomicLong emitCounter = new AtomicLong();
+        AtomicLong cancelCounter = new AtomicLong();
+        Multi<String> multi = Multi.createFrom().emitter(emitter -> {
+            emitter.onCancellation(cancelCounter::incrementAndGet);
+            emitter.onRequest(n -> {
+                emitCounter.addAndGet(n);
+                for (int i = 0; i < n; i++) {
+                    emitter.emit("yolo");
+                }
+            });
+        });
+        AssertSubscriber<String> sub = multi.subscribe().withSubscriber(AssertSubscriber.create(0));
+
+        sub.request(1L);
+        sub.assertItems("yolo");
+        sub.request(2L);
+        sub.assertItems("yolo", "yolo", "yolo");
+        sub.cancel();
+
+        sub.request(10L);
+        sub.cancel();
+        sub.request(10L);
+        sub.cancel();
+
+        assertThat(emitCounter.get()).isEqualTo(3L);
+        assertThat(cancelCounter.get()).isEqualTo(1L);
     }
 }

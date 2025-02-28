@@ -1,6 +1,7 @@
 package io.smallrye.mutiny.subscription;
 
 import java.util.concurrent.Flow.Subscription;
+import java.util.function.LongConsumer;
 
 import io.smallrye.mutiny.Multi;
 
@@ -66,4 +67,27 @@ public interface MultiEmitter<T> extends ContextSupport {
      */
     long requested();
 
+    /**
+     * Defines a callback for {@link Subscription#request(long)} signals.
+     * <p>
+     * This is useful to facilitate the implementation of back-pressured emissions.
+     *
+     * @param consumer the callback
+     * @return this emitter
+     */
+    default MultiEmitter<T> onRequest(LongConsumer consumer) {
+        throw new UnsupportedOperationException("To be implemented");
+    }
+
+    /**
+     * Defines a callback for {@link Subscription#cancel()} signals.
+     * <p>
+     * This is useful to facilitate the implementation of cancellation logic.
+     *
+     * @param onCancellation the callback
+     * @return this emitter
+     */
+    default MultiEmitter<T> onCancellation(Runnable onCancellation) {
+        throw new UnsupportedOperationException("To be implemented");
+    }
 }

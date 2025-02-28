@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceAccessMode;
@@ -319,5 +320,36 @@ public class MultiBroadcastTest {
         sub = AssertSubscriber.create();
         emitter.subscribe(sub);
         sub.request(-1L).assertFailedWith(IllegalArgumentException.class, "must be greater than 0");
+    }
+
+    @Test
+    public void requestAndCancelCallbacks() {
+        AtomicLong emitCounter = new AtomicLong();
+        AtomicLong cancelCounter = new AtomicLong();
+
+        MultiEmitterProcessor<Integer> emitter = MultiEmitterProcessor.create();
+        AssertSubscriber<Integer> sub = AssertSubscriber.create();
+        emitter.subscribe(sub);
+
+        emitter.onRequest(n -> {
+            emitCounter.addAndGet(n);
+            for (long i = 0; i < n; i++) {
+                emitter.emit(69);
+            }
+        });
+        emitter.onCancellation(cancelCounter::incrementAndGet);
+
+        sub.request(1L);
+        sub.assertItems(69);
+        sub.request(2L);
+        sub.assertItems(69, 69, 69);
+
+        sub.cancel();
+        sub.request(10L);
+        sub.cancel();
+
+        assertThat(sub.getItems()).hasSize(3);
+        assertThat(emitCounter.get()).isEqualTo(3L);
+        assertThat(cancelCounter.get()).isEqualTo(1L);
     }
 }

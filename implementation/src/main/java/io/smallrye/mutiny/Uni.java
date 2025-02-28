@@ -300,6 +300,7 @@ public interface Uni<T> {
      * This {@link Uni} detects if this {@link Uni} does not emit an item before the configured timeout.
      * <p>
      * Examples:
+     *
      * <pre>{@code
      * uni.ifNoItem().after(Duration.ofMillis(1000)).fail() // Propagate a TimeOutException
      * uni.ifNoItem().after(Duration.ofMillis(1000)).recoverWithValue("fallback") // Inject a fallback item on timeout

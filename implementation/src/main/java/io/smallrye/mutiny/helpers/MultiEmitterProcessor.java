@@ -5,7 +5,8 @@ import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.LongConsumer;
 
 import io.smallrye.mutiny.Context;
 import io.smallrye.mutiny.Multi;
@@ -15,9 +16,18 @@ import io.smallrye.mutiny.subscription.MultiEmitter;
 public class MultiEmitterProcessor<T> implements Processor<T, T>, MultiEmitter<T> {
 
     private final UnicastProcessor<T> processor;
-    private final AtomicReference<Runnable> onTermination = new AtomicReference<>();
+
     private final AtomicBoolean terminated = new AtomicBoolean();
     private final AtomicLong requested = new AtomicLong();
+
+    private volatile Runnable onTermination;
+    private volatile Runnable onCancellation;
+    private volatile LongConsumer onRequest;
+
+    private static final AtomicReferenceFieldUpdater<MultiEmitterProcessor, Runnable> ON_TERMINATION_UPDATER = AtomicReferenceFieldUpdater
+            .newUpdater(MultiEmitterProcessor.class, Runnable.class, "onTermination");
+    private static final AtomicReferenceFieldUpdater<MultiEmitterProcessor, Runnable> ON_CANCELLATION_UPDATER = AtomicReferenceFieldUpdater
+            .newUpdater(MultiEmitterProcessor.class, Runnable.class, "onCancellation");
 
     private MultiEmitterProcessor() {
         this.processor = UnicastProcessor.create();
@@ -45,7 +55,7 @@ public class MultiEmitterProcessor<T> implements Processor<T, T>, MultiEmitter<T
 
     @Override
     public MultiEmitter<T> onTermination(Runnable onTermination) {
-        this.onTermination.set(onTermination);
+        this.onTermination = onTermination;
         return this;
     }
 
@@ -59,6 +69,18 @@ public class MultiEmitterProcessor<T> implements Processor<T, T>, MultiEmitter<T
         return requested.get();
     }
 
+    @Override
+    public MultiEmitter<T> onRequest(LongConsumer consumer) {
+        this.onRequest = consumer;
+        return this;
+    }
+
+    @Override
+    public MultiEmitter<T> onCancellation(Runnable onCancellation) {
+        this.onCancellation = onCancellation;
+        return this;
+    }
+
     @SuppressWarnings("SubscriberImplementation")
     @Override
     public void subscribe(Subscriber<? super T> subscriber) {
@@ -70,8 +92,12 @@ public class MultiEmitterProcessor<T> implements Processor<T, T>, MultiEmitter<T
                     public void request(long n) {
                         if (n <= 0L) {
                             onError(Subscriptions.getInvalidRequestException());
-                        } else {
+                        } else if (!terminated.get()) {
                             Subscriptions.add(requested, n);
+                            LongConsumer callback = onRequest;
+                            if (callback != null) {
+                                callback.accept(n);
+                            }
                             subscription.request(n);
                         }
                     }
@@ -79,6 +105,10 @@ public class MultiEmitterProcessor<T> implements Processor<T, T>, MultiEmitter<T
                     @Override
                     public void cancel() {
                         subscription.cancel();
+                        Runnable callback = ON_CANCELLATION_UPDATER.getAndSet(MultiEmitterProcessor.this, null);
+                        if (callback != null) {
+                            callback.run();
+                        }
                         fireTermination();
                     }
                 });
@@ -105,7 +135,7 @@ public class MultiEmitterProcessor<T> implements Processor<T, T>, MultiEmitter<T
 
     private void fireTermination() {
         if (terminated.compareAndSet(false, true)) {
-            Runnable runnable = onTermination.getAndSet(null);
+            Runnable runnable = ON_TERMINATION_UPDATER.getAndSet(this, null);
             if (runnable != null) {
                 runnable.run();
             }
